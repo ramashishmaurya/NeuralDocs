@@ -1,0 +1,10 @@
+.env
+/.env
+
+/myenv
+
+/.__pycache
+/.myenv
+
+__pycache__
+
