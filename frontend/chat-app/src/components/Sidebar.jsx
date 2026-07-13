@@ -1,10 +1,25 @@
-import React, { useRef, useState } from 'react';
-import { UploadCloud, FileText, CheckCircle, Database, Trash2 } from 'lucide-react';
+import React, { useRef, useState } from "react";
+import {
+  UploadCloud,
+  FileText,
+  CheckCircle,
+  Database,
+  Trash2,
+} from "lucide-react";
 
 const Sidebar = ({ currentFile, onFileUpload, onDeleteFile }) => {
   const fileInputRef = useRef(null);
+
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+
+  // Create Session ID Once
+  let sessionId = localStorage.getItem("session_id");
+
+  if (!sessionId) {
+    sessionId = crypto.randomUUID();
+    localStorage.setItem("session_id", sessionId);
+  }
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -19,28 +34,53 @@ const Sidebar = ({ currentFile, onFileUpload, onDeleteFile }) => {
   const handleDrop = (e) => {
     e.preventDefault();
     setIsDragging(false);
+
     const files = e.dataTransfer.files;
+
     if (files.length > 0) {
-      simulateUpload(files[0]);
-    } else {
-      alert('Please upload a valid document.');
+      uploadFile(files[0]);
     }
   };
 
   const handleFileChange = (e) => {
     const files = e.target.files;
+
     if (files.length > 0) {
-      simulateUpload(files[0]);
+      uploadFile(files[0]);
     }
   };
 
-  const simulateUpload = (file) => {
-    setIsUploading(true);
-    // Simulate network request to backend
-    setTimeout(() => {
+  const uploadFile = async (file) => {
+    try {
+      setIsUploading(true);
+
+      const formData = new FormData();
+
+      formData.append("session_id", sessionId);
+      formData.append("file", file);
+
+      const response = await fetch("http://127.0.0.1:8000/upload/", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Upload Failed");
+      }
+
+      const data = await response.json();
+
+      console.log("Upload Response:", data);
+
       onFileUpload(file);
+
+      alert("✅ File Uploaded Successfully");
+    } catch (error) {
+      console.error(error);
+      alert("❌ Upload Failed");
+    } finally {
       setIsUploading(false);
-    }, 1500);
+    }
   };
 
   return (
@@ -53,57 +93,62 @@ const Sidebar = ({ currentFile, onFileUpload, onDeleteFile }) => {
       </div>
 
       <div className="sidebar-content">
-        <h3 style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: 'var(--spacing-md)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        <h3
+          style={{
+            fontSize: "0.875rem",
+            color: "var(--text-secondary)",
+            marginBottom: "var(--spacing-md)",
+          }}
+        >
           Document Context
         </h3>
-        
+
         {currentFile ? (
           <div className="document-item">
-            <FileText size={24} color="var(--accent-primary)" style={{ flexShrinks: 0 }} />
-            <div className="doc-info" style={{ flex: 1, minWidth: 0 }}>
-              <span className="doc-name">{currentFile.name}</span>
+            <FileText size={24} />
+
+            <div className="doc-info">
+              <span>{currentFile.name}</span>
+
               <span className="doc-status">
-                <CheckCircle size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
+                <CheckCircle size={12} />
                 Processed & Active
               </span>
             </div>
-            <button 
-              className="delete-btn" 
-              onClick={onDeleteFile} 
-              title="Remove document"
-              aria-label="Remove document"
-            >
+
+            <button onClick={onDeleteFile}>
               <Trash2 size={16} />
             </button>
           </div>
         ) : (
-          <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', padding: 'var(--spacing-md)', backgroundColor: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--border-color)' }}>
-            No document uploaded yet. Upload a document to begin chatting.
-          </div>
+          <p>No document uploaded.</p>
         )}
       </div>
 
-      <div 
-        className={`upload-area ${isDragging ? 'drag-active' : ''}`}
+      <div
+        className={`upload-area ${isDragging ? "drag-active" : ""}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
+        onClick={() => fileInputRef.current.click()}
       >
-        <UploadCloud className="upload-icon" size={40} />
+        <UploadCloud size={40} />
+
         {isUploading ? (
-          <span className="upload-title">Processing Document...</span>
+          <span>Uploading...</span>
         ) : (
           <>
-            <span className="upload-title">Upload Knowledge Base</span>
-            <span className="upload-text">Drag & drop or click to browse</span>
+            <span>Upload Knowledge Base</span>
+            <span>Drag & Drop or Click</span>
           </>
         )}
-        <input 
-          type="file" 
-          ref={fileInputRef} 
-          onChange={handleFileChange} 
-          style={{ display: 'none' }} 
+
+        <input
+          type="file"
+          accept=".pdf,.docx,.txt"
+          ref={fileInputRef}
+          style={{ display: "none" }}
+          onChange={handleFileChange}
         />
       </div>
     </aside>

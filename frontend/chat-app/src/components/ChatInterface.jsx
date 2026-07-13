@@ -32,7 +32,7 @@ const ChatInterface = ({ currentFile }) => {
     }
   }, [currentFile]);
 
-  const handleSendMessage = (e) => {
+  const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!inputValue.trim()) return;
     
@@ -51,16 +51,65 @@ const ChatInterface = ({ currentFile }) => {
     setInputValue('');
     setIsTyping(true);
 
-    // Simulate backend response
-    setTimeout(() => {
-      setIsTyping(false);
-      const botResponse = {
+    try {
+      const sessionId = localStorage.getItem("session_id");
+      const botMessageId = Date.now() + 1;
+      
+      setMessages(prev => [...prev, {
+        id: botMessageId,
+        type: 'bot',
+        content: ""
+      }]);
+
+      const ws = new WebSocket("ws://127.0.0.1:8000/ws/chat");
+      
+      ws.onopen = () => {
+        ws.send(JSON.stringify({
+          session_id: sessionId,
+          question: userMessage.content,
+        }));
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        setIsTyping(false); 
+        
+        if (data.error) {
+          console.error(data.error);
+          setMessages(prev => prev.map(msg => 
+            msg.id === botMessageId ? { ...msg, content: msg.content + "\\n[Error: " + data.error + "]" } : msg
+          ));
+          ws.close();
+        } else if (data.done) {
+          ws.close();
+        } else if (data.chunk) {
+          setMessages(prev => prev.map(msg => 
+            msg.id === botMessageId ? { ...msg, content: msg.content + data.chunk } : msg
+          ));
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error("WebSocket Error:", error);
+        setMessages(prev => prev.map(msg => 
+          msg.id === botMessageId ? { ...msg, content: "Sorry, there was a connection error." } : msg
+        ));
+        setIsTyping(false);
+      };
+      
+      ws.onclose = () => {
+        setIsTyping(false);
+      };
+
+    } catch (error) {
+      console.error(error);
+      setMessages(prev => [...prev, {
         id: Date.now() + 1,
         type: 'bot',
-        content: `This is a simulated answer for your question: "${userMessage.content}". Once the backend is connected, this will be replaced with real insights from your document.`
-      };
-      setMessages(prev => [...prev, botResponse]);
-    }, 2000);
+        content: "Sorry, there was an error processing your request. Make sure the backend is running and the document is uploaded."
+      }]);
+      setIsTyping(false);
+    }
   };
 
   const handleKeyDown = (e) => {
