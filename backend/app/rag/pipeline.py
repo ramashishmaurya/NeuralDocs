@@ -23,11 +23,9 @@ from app.rag.vectorstore import get_or_create_collection
 
 
 # Load Environment Variables
+
 load_dotenv()
 
-# Initialize LLM globally 
-# Model name "gemini-2.5-flash" works perfectly
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 from langchain_ollama import ChatOllama
 
@@ -37,11 +35,23 @@ ollama_llm = ChatOllama(
     base_url="http://localhost:11434"
 )
 
-# Session history storage
-session_histories: dict[str, list] = {}
+import redis
+from langchain_core.globals import set_llm_cache
+from langchain_community.cache import RedisCache
+from langchain_community.chat_message_histories import RedisChatMessageHistory
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
+# Setup Global LLM Cache using Redis
+redis_client = redis.Redis.from_url(REDIS_URL)
+set_llm_cache(RedisCache(redis_=redis_client))
+
+def get_chat_history_obj(session_id: str):
+    return RedisChatMessageHistory(session_id=session_id, url=REDIS_URL)
 
 def get_chat_history(session_id: str) -> list:
-    return session_histories.get(session_id, [])
+    history = get_chat_history_obj(session_id)
+    return history.messages
 
 
 def build_rag_chain(session_id: str ):
@@ -49,7 +59,8 @@ def build_rag_chain(session_id: str ):
     retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
     
     # Using the global ollama_llm instance directly to avoid "not callable" error
-    current_llm = ollama_llm 
+
+    current_llm = ollama_llm  
 
     contextualize_q_prompt = ChatPromptTemplate.from_messages([
         ("system",
@@ -83,6 +94,7 @@ def build_rag_chain(session_id: str ):
     return rag_chain
 
 
+
 def ask_question(session_id: str, question: str):
     try:
         print(f"[INFO] Building RAG chain for session: {session_id}")
@@ -98,14 +110,10 @@ def ask_question(session_id: str, question: str):
         print(f"[INFO] Result keys: {result.keys()}")
         answer = result.get("answer", "Sorry, I could not generate an answer.")
 
-        if session_id not in session_histories:
-            session_histories[session_id] = []
-
-        # Appending message history accurately
-        session_histories[session_id].extend([
-            HumanMessage(content=question),
-            AIMessage(content=answer)
-        ])
+        # Store message history in Redis
+        history = get_chat_history_obj(session_id)
+        history.add_user_message(question)
+        history.add_ai_message(answer)
 
         sources = list(set([
             doc.metadata.get("source", "Unknown")
@@ -134,19 +142,15 @@ async def stream_ask_question(session_id: str, question: str):
             "input": question,
             "chat_history": chat_history
         }):
-            print(chunk)
+            # print(chunk)
             if "answer" in chunk:
                 full_answer += chunk["answer"]
                 yield chunk["answer"]
         
-        if session_id not in session_histories:
-            session_histories[session_id] = []
-
-        # Appending message history accurately after streaming completes
-        session_histories[session_id].extend([
-            HumanMessage(content=question),
-            AIMessage(content=full_answer)
-        ])
+        # Store message history in Redis after streaming completes
+        history = get_chat_history_obj(session_id)
+        history.add_user_message(question)
+        history.add_ai_message(full_answer)
 
     except Exception as e:
         print(f"[ERROR] stream_ask_question failed: {str(e)}")

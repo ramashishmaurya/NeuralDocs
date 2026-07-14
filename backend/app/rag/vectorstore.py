@@ -42,14 +42,31 @@ def get_or_create_collection(session_id: str) -> QdrantVectorStore:
     Yeh function sirf session_id lega aur Qdrant collection ka instance return karega.
     Iska use tere 'build_rag_chain' mein retriever banane ke liye hoga (bina document bheje).
     """
+    client = get_qdrant_client()
+    
+    # Ensure the collection exists before returning the vector store to avoid 404 on query
+    try:
+        if not client.collection_exists(collection_name=session_id):
+            from qdrant_client import models
+            client.create_collection(
+                collection_name=session_id,
+                vectors_config=models.VectorParams(
+                    size=768,  # nomic-embed-text typically uses 768 dimensions
+                    distance=models.Distance.COSINE
+                )
+            )
+            print(f"Created new empty Qdrant collection: {session_id}")
+    except Exception as e:
+        print(f"Warning: Could not check or create collection {session_id}: {e}")
+
     # Direct QdrantVectorStore return kar rahe hain cached clients ke saath
     return QdrantVectorStore(
-        client=get_qdrant_client(),
+        client=client,
         collection_name=session_id,
         embedding=get_embeddings()
     )
 
-def add_documents(session_id: str, documents:list[str]):
+def add_documents(session_id: str, documents:list[str]): # nees as seesion id 
     """
     Yeh function sirf tab call karna jab naye documents ko embed karke 
     Qdrant mein save karna ho.
@@ -60,7 +77,7 @@ def add_documents(session_id: str, documents:list[str]):
         embedding=get_embeddings(),
         url=os.getenv("QDRANT_URL"),
         api_key=os.getenv("QDRANT_API_KEY"),
-        collection_name=session_id,
+        collection_name=session_id, # we ate uisng gtheis qdrany database vector datasbae corrected 
     )
 
     print(f"✅ Data successfully stored/updated in Qdrant collection: '{session_id}'")

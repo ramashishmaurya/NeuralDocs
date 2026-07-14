@@ -1,12 +1,15 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 import os
-
-# add_documents ko sahi se use karne ke liye call karenge
-from app.rag.document_loader import load_and_split
-from app.rag.vectorstore import add_documents, get_qdrant_client
+import uuid
+import shutil
+from celery.result import AsyncResult
+from app.worker import process_document_task
+from app.rag.vectorstore import get_qdrant_client
 
 router = APIRouter(prefix="/upload", tags=["Upload"])
 
+UPLOAD_DIR = "temp_uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 @router.post("/")
 async def upload_file(
@@ -14,42 +17,65 @@ async def upload_file(
     file: UploadFile = File(...)
 ):
     try:
-        # 1. Read uploaded file bytes
-        file_bytes = await file.read()
+        # Generate a unique temp file path
+        temp_filename = f"{uuid.uuid4()}_{file.filename}"
+        temp_file_path = os.path.join(UPLOAD_DIR, temp_filename)
+        
+        # Save uploaded file to temp directory
+        with open(temp_file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
 
-        # 2. Load & split document into chunks
-        documents = load_and_split(file_bytes, file.filename)
-
-        if not documents:
-            raise HTTPException(
-                status_code=400, 
-                detail="Document content could not be parsed or split."
-            )
-
-        # 3. Store embeddings in Qdrant using the correct function
-        # Yeh function documents ko embed karke session_id wali collection mein daal dega
-        add_documents(session_id, documents) 
+        # Trigger Celery Task asynchronously
+        task = process_document_task.delay(session_id, temp_file_path, file.filename)
 
         return {
             "success": True,
-            "message": "Document uploaded and stored successfully.",
+            "message": "Document uploaded successfully and is being processed in the background.",
             "session_id": session_id,
-            "filename": file.filename,
-            "chunks": len(documents)
+            "task_id": task.id
         }
 
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=str(e)
         )
-    
 
+@router.get('/status/{task_id}')
+def check_task_status(task_id: str):
+    task = AsyncResult(task_id)
+    if task.state == 'PENDING':
+        response = {
+            'state': task.state,
+            'status': 'Task is waiting in queue...'
+        }
+    elif task.state == 'PROCESSING':
+        response = {
+            'state': task.state,
+            'status': task.info.get('status', 'Processing...')
+        }
+    elif task.state == 'SUCCESS':
+        response = {
+            'state': task.state,
+            'status': 'Completed',
+            'result': task.info
+        }
+    elif task.state == 'FAILURE':
+        response = {
+            'state': task.state,
+            'status': 'Failed',
+            'error': str(task.info)
+        }
+    else:
+        response = {
+            'state': task.state,
+            'status': str(task.info)
+        }
+    return response
+
+# this is for ckekc wheather session is stored in qdrant database or not 
 @router.get('/cross')
-def check_works():  # Fixed typo in function name
-    # Health check for Qdrant client connection
+def check_works(): 
     client = get_qdrant_client()
     try:
         # Sirf client object return karne ke bajay ek chota sa ping/check response dena reliable hota hai
