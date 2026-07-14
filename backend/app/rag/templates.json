@@ -1,0 +1,16 @@
+{
+    "name": null,
+    "input_variables": [
+        "lines",
+        "topics"
+    ],
+    "optional_variables": [],
+    "output_parser": null,
+    "partial_variables": {},
+    "metadata": null,
+    "tags": null,
+    "template": " i am going to ask about this toopics right now {topics} and explain all in {lines}",
+    "template_format": "f-string",
+    "validate_template": true,
+    "_type": "prompt"
+}

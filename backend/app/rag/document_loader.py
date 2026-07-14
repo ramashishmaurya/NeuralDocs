@@ -4,11 +4,11 @@ from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, Te
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
-def load_and_split(file_bytes: bytes, filename: str):
-    suffix = os.path.splitext(filename)[-1].lower() # here is what to split get the 
+def load_and_split(file_bytes:bytes, filename: str):
+    suffix = os.path.splitext(filename)[-1].lower() # here is what to split get the  .pdf extract data like this okay
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        tmp.write(file_bytes)
+        tmp.write(file_bytes) 
         tmp_path = tmp.name
 
     try:
@@ -32,3 +32,4 @@ def load_and_split(file_bytes: bytes, filename: str):
 
 
     return splitter.split_documents(documents)
+
